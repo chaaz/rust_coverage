@@ -7,6 +7,9 @@ coverage data for Rust unit tests, using
 - `rustcov`: The top-level script to run in your project directory.
 - `genhtml`: Stolen from lcov, this needs to be in your PATH when you
   run `rustcov`. MacOS brew users can use `brew install lcov` instead.
+- `wait-for`: A way to wait for another program. Stolen from
+  [eficode](https://github.com/eficode/wait-for/), but doesn't mess with
+  an app's HOST or PORT environment.
 
 ## Requirements
 
