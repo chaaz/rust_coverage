@@ -1,0 +1,70 @@
+# #!/usr/bin/env bash
+
+# (roughly) from https://github.com/mozilla/grcov , but don't use
+# codecov.io
+#
+# Writes a `target/coverage/report/index.html`, and outputs (at the end)
+# something like
+#
+# ```
+# Overall coverage rate:
+#   lines......: 100.0% (57 of 57 lines)
+#   functions..: 69.8% (30 of 43 functions)
+# ```
+#
+# functions% is useless: grcov does not understand rust functions, but
+# lines% should get to 100% if you want complete coverage. The trick is
+# to put network code, long loops, and other non-unit-testable code in
+# `*system*.rs` files, which have trival `#[cfg(test)]` implementations.
+# Make sure you justify in comments why they should be excluded from
+# coverage.
+#
+# If you don't have `/target` added to your `.gitignore`, `.ignore`,
+# etc. files for some reason, you should at least include
+# `/target/coverage`
+#
+# first:
+# ```
+# rustup toolchain install nightly  # for -Zprofile
+# cargo install grcov
+# brew install lcov  # for genhtml
+# ```
+
+set -e
+
+if [[ ! -f Cargo.toml ]] ; then
+  echo "ERROR: Must run in a root cargo project"
+  exit -1
+fi
+
+# Assume that the name of the project is the same as `pwd`
+pname=$(basename `pwd`)
+uname=$(echo $pname | tr - _)
+tdir=target/coverage
+
+if [[ $pname = $uname ]] ; then
+  echo "running tests/coverage for ${pname}"
+else
+  echo "running tests/coverage for ${pname} (${uname})"
+fi
+
+export CARGO_INCREMENTAL=0
+export RUSTFLAGS="-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zno-landing-pads"
+
+# Painful, but we need a complete build to coverage check.
+cargo clean
+rm -rf ${tdir}
+
+cargo +nightly build --verbose
+cargo +nightly test --verbose
+
+mkdir -p ${tdir}
+
+zip -0 ${tdir}/ccov.zip `find . \( -name "${uname}*.gc*" \) -print`
+grcov ${tdir}/ccov.zip -s . -t lcov --llvm --branch --ignore-not-existing \
+      --ignore "/*" --ignore '*system*' -o ${tdir}/lcov.info
+genhtml -o ${tdir}/report/ --show-details --highlight --ignore-errors source \
+        --legend ${tdir}/lcov.info | tee ${tdir}/output
+
+# fail if there is no `100` in `lines...:` of genhtml output
+tail -5 ${tdir}/output | grep -i lines | grep -q 100
