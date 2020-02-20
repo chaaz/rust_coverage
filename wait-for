@@ -1,10 +1,14 @@
 #!/bin/sh
 
-TIMEOUT=15
-QUIET=0
+# Just like https://github.com/eficode/wait-for/raw/master/wait-for, but
+# using more conventional lower-case for local variables (mostly so that
+# PORT doesn't get exported into whatever is being exec'd).
+
+timeout=15
+quiet=0
 
 echoerr() {
-  if [ "$QUIET" -ne 1 ]; then printf "%s\n" "$*" 1>&2; fi
+  if [ "$quiet" -ne 1 ]; then printf "%s\n" "$*" 1>&2; fi
 }
 
 usage() {
@@ -20,8 +24,8 @@ USAGE
 }
 
 wait_for() {
-  for i in `seq $TIMEOUT` ; do
-    nc -z "$HOST" "$PORT" > /dev/null 2>&1
+  for i in `seq $timeout` ; do
+    nc -z "$host" "$port" > /dev/null 2>&1
     
     result=$?
     if [ $result -eq 0 ] ; then
@@ -40,21 +44,21 @@ while [ $# -gt 0 ]
 do
   case "$1" in
     *:* )
-    HOST=$(printf "%s\n" "$1"| cut -d : -f 1)
-    PORT=$(printf "%s\n" "$1"| cut -d : -f 2)
+    host=$(printf "%s\n" "$1"| cut -d : -f 1)
+    port=$(printf "%s\n" "$1"| cut -d : -f 2)
     shift 1
     ;;
     -q | --quiet)
-    QUIET=1
+    quiet=1
     shift 1
     ;;
     -t)
-    TIMEOUT="$2"
-    if [ "$TIMEOUT" = "" ]; then break; fi
+    timeout="$2"
+    if [ "$timeout" = "" ]; then break; fi
     shift 2
     ;;
     --timeout=*)
-    TIMEOUT="${1#*=}"
+    timeout="${1#*=}"
     shift 1
     ;;
     --)
@@ -71,7 +75,7 @@ do
   esac
 done
 
-if [ "$HOST" = "" -o "$PORT" = "" ]; then
+if [ "$host" = "" -o "$port" = "" ]; then
   echoerr "Error: you need to provide a host and port to test."
   usage 2
 fi
