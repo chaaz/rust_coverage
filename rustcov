@@ -23,7 +23,7 @@
 # etc. files for some reason, you should at least include
 # `/target/coverage`
 #
-# first:
+# first (MacOS):
 # ```
 # rustup toolchain install nightly  # for -Zprofile
 # cargo install grcov
@@ -49,7 +49,7 @@ else
 fi
 
 export CARGO_INCREMENTAL=0
-export RUSTFLAGS="-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Zno-landing-pads"
+export RUSTFLAGS="-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Cpanic=abort -Zpanic_abort_tests"
 
 # Painful, but we need a complete build to coverage check.
 cargo clean
