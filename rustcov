@@ -26,6 +26,7 @@
 # first (MacOS):
 # ```
 # rustup toolchain install nightly  # for -Zprofile
+# rustup component add llvm-tools-preview
 # cargo install grcov
 # brew install lcov  # for genhtml
 # ```
@@ -37,32 +38,84 @@ if [[ ! -f Cargo.toml ]] ; then
   exit -1
 fi
 
+usage() {
+  exitcode="$1"
+  cat << USAGE >&2
+Usage:
+  $cmdname [options]
+  -d   Run dirty (don't clean): only use this if you
+       haven't run cargo at all since the last rustcov.
+  -h   Show this message
+USAGE
+  exit "$exitcode"
+}
+
+# Get our options
+dirty=0
+while getopts "dh" opt ; do
+  case $opt in
+    d) dirty=1 ;;
+    h) usage 0 ;;
+  esac
+done
+
 # Assume that the name of the project is the same as `pwd`
 pname=$(basename `pwd`)
 uname=$(echo $pname | tr - _)
 tdir=target/coverage
 
-if [[ $pname = $uname ]] ; then
-  echo "running tests/coverage for ${pname}"
-else
-  echo "running tests/coverage for ${pname} (${uname})"
-fi
+cargo_targets=$(
+  IFS=$'\n'
+  meta=`cargo +nightly metadata --format-version 1`
+  for m in `jq -r '.workspace_members[]' <<< "$meta"` ; do
+    jq -r ".packages[] | select(.id == \"$m\") | .targets[] | select(.kind[0] != \"custom-build\") | .name" <<< "$meta" | tr - _
+  done
+)
+cargo_targets=$(xargs echo <<< "$cargo_targets")
+
+workspace_members=$(
+  cargo +nightly metadata --format-version 1 | jq -r '.workspace_members[]' | cut -d' ' -f1
+)
+workspace_members=$(xargs echo <<< "$workspace_members")
+
+echo "running tests/coverage for ${cargo_targets}"
 
 export CARGO_INCREMENTAL=0
-export RUSTFLAGS="-Zprofile -Ccodegen-units=1 -Cinline-threshold=0 -Clink-dead-code -Coverflow-checks=off -Cpanic=abort -Zpanic_abort_tests"
+export RUSTFLAGS="-Zprofile -Ccodegen-units=1 -Copt-level=0 -Clink-dead-code -Coverflow-checks=off -Zpanic_abort_tests -Cpanic=abort"
+export RUSTDOCFLAGS="-Cpanic=abort"
+
+# Inelegent, but effective. We use --target on the cargo command to
+# prevent build scripts from seeing RUSTFLAGS (this is a
+# perhaps-temporarily intention of cargo). Some build scripts like
+# etcd-rs end up using panic/unwind, which panic=abort will cause to
+# fail.
+target=$(rustup show | grep default | sed -e "s/^[^-]*-\(.*\) .*/\1/")
 
 # Painful, but we need a complete build to coverage check.
-cargo clean
+if [ $dirty == "0" ] ; then
+  for w in "$workspace_members" ; do
+    cargo +nightly clean -p "$w" --target ${target}
+  done
+  find target -name '*.gc*' -delete
+else
+  find target -name '*.gcda' -delete
+fi
 rm -rf ${tdir}
 
-cargo +nightly build --verbose
-cargo +nightly test --verbose
+# Actually (build and then) run tests
+cargo +nightly test --target ${target} "${@:$OPTIND}"
 
 mkdir -p ${tdir}
 
-zip -0 ${tdir}/ccov.zip `find . \( -name "${uname}*.gc*" \) -print`
-grcov ${tdir}/ccov.zip -s . -t lcov --llvm --branch --ignore-not-existing \
-      --ignore "/*" --ignore '*system*' -o ${tdir}/lcov.info
+# zip -0 ${tdir}/ccov.zip `find . \( -name "${uname}*.gc*" \) -print`
+# grcov ${tdir}/ccov.zip -s . -t lcov --llvm --branch --ignore-not-existing \
+#       --ignore 'target/*' --ignore "/*" --ignore '*system*' \
+#       -o ${tdir}/lcov.info
+
+grcov . -s . -t lcov --llvm --branch --ignore-not-existing \
+      --ignore 'target/*' --ignore "/*" --ignore '*system*' \
+      -o ${tdir}/lcov.info
+
 genhtml -o ${tdir}/report/ --show-details --highlight --ignore-errors source \
         --legend ${tdir}/lcov.info | tee ${tdir}/output
 
